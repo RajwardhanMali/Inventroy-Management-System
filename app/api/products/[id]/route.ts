@@ -119,41 +119,44 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       return NextResponse.json({ message: "Product not found" }, { status: 404 })
     }
 
-    // Delete related inventory items
-    await prisma.inventory.deleteMany({
-      where: {
-        productId,
-      },
-    })
+    // Use a transaction to ensure all operations succeed or fail together
+    await prisma.$transaction(async (tx) => {
+      // Create activity log first
+      await tx.activityLog.create({
+        data: {
+          userId: Number.parseInt(session.user.id),
+          action: `deleted product ${existingProduct.name}`,
+          productId: existingProduct.id,
+        },
+      })
 
-    // Delete related alerts
-    await prisma.alert.deleteMany({
-      where: {
-        productId,
-      },
-    })
+      // Delete related inventory items
+      await tx.inventory.deleteMany({
+        where: {
+          productId,
+        },
+      })
 
-    // Delete related activity logs
-    await prisma.activityLog.deleteMany({
-      where: {
-        productId,
-      },
-    })
+      // Delete related alerts
+      await tx.alert.deleteMany({
+        where: {
+          productId,
+        },
+      })
 
-    // Delete product
-    await prisma.product.delete({
-      where: {
-        id: productId,
-      },
-    })
+      // Delete related activity logs
+      await tx.activityLog.deleteMany({
+        where: {
+          productId,
+        },
+      })
 
-    // Log activity
-    await prisma.activityLog.create({
-      data: {
-        userId: Number.parseInt(session.user.id),
-        action: `deleted product ${existingProduct.name}`,
-        productId: 0, // Use 0 as a placeholder since the product is deleted
-      },
+      // Finally delete the product
+      await tx.product.delete({
+        where: {
+          id: productId,
+        },
+      })
     })
 
     return NextResponse.json({ message: "Product deleted successfully" })

@@ -1,5 +1,8 @@
-import { prisma } from "@/lib/prisma"
-import bcrypt from "bcryptjs"
+#!/usr/bin/env node
+const { PrismaClient } = require('@prisma/client')
+const bcrypt = require('bcryptjs')
+
+const prisma = new PrismaClient()
 
 async function createTestUser(username: string, password: string) {
   try {
@@ -8,21 +11,21 @@ async function createTestUser(username: string, password: string) {
     const user = await prisma.user.create({
       data: {
         username: username,
-        password: hashedPassword,  // make sure this matches your schema field name
+        password: hashedPassword,
         role: "admin",
       },
     })
 
     console.log("Test user created successfully:", user.username)
-    await prisma.$disconnect()
   } catch (error) {
     console.error("Error creating test user:", error)
-    await prisma.$disconnect()
     process.exit(1)
+  } finally {
+    await prisma.$disconnect()
   }
 }
 
-// Self-executing function to run the code
+// Run the script
 createTestUser("admin", "admin123")
   .catch((error) => {
     console.error(error)

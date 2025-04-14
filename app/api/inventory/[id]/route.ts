@@ -63,6 +63,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       where: {
         id: inventoryId,
       },
+      include: {
+        product: true,
+      },
     })
 
     if (!existingItem) {
@@ -80,61 +83,66 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       return NextResponse.json({ message: "Product not found" }, { status: 404 })
     }
 
-    // Update inventory item
-    const inventoryItem = await prisma.inventory.update({
-      where: {
-        id: inventoryId,
-      },
-      data: {
-        productId,
-        quantity,
-        expiryDate: new Date(expiryDate),
-      },
-    })
-
-    // Log activity
-    await prisma.activityLog.create({
-      data: {
-        userId: Number.parseInt(session.user.id),
-        action: `updated inventory for ${product.name}`,
-        productId,
-      },
-    })
-
-    // Check for low stock and create alert if needed
-    const totalQuantity = await prisma.inventory.aggregate({
-      where: {
-        productId,
-      },
-      _sum: {
-        quantity: true,
-      },
-    })
-
-    if ((totalQuantity._sum.quantity || 0) < 10) {
-      await prisma.alert.create({
+    // Use transaction to ensure all operations succeed or fail together
+    const inventoryItem = await prisma.$transaction(async (tx) => {
+      // Update inventory item
+      const updated = await tx.inventory.update({
+        where: {
+          id: inventoryId,
+        },
         data: {
           productId,
-          alertType: "low_stock",
-          message: `Low stock alert: ${product.name} has less than 10 ${product.unit} in inventory.`,
+          quantity,
+          expiryDate: new Date(expiryDate),
         },
       })
-    }
 
-    // Check for near expiry and create alert if needed
-    const expiryDateObj = new Date(expiryDate)
-    const sevenDaysFromNow = new Date()
-    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
-
-    if (expiryDateObj <= sevenDaysFromNow) {
-      await prisma.alert.create({
+      // Log activity with quantity change information
+      await tx.activityLog.create({
         data: {
+          userId: Number.parseInt(session.user.id),
+          action: `updated ${product.name} inventory from ${existingItem.quantity} to ${quantity}`,
           productId,
-          alertType: "near_expiry",
-          message: `Near expiry alert: ${product.name} will expire on ${expiryDateObj.toLocaleDateString()}.`,
         },
       })
-    }
+
+      // Check for low stock and create alert if needed
+      const totalQuantity = await tx.inventory.aggregate({
+        where: {
+          productId,
+        },
+        _sum: {
+          quantity: true,
+        },
+      })
+
+      if ((totalQuantity._sum.quantity || 0) < 10) {
+        await tx.alert.create({
+          data: {
+            productId,
+            alertType: "low_stock",
+            message: `Low stock alert: ${product.name} has less than 10 ${product.unit} in inventory.`,
+          },
+        })
+      }
+
+      // Check for near expiry and create alert if needed
+      const expiryDateObj = new Date(expiryDate)
+      const sevenDaysFromNow = new Date()
+      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
+
+      if (expiryDateObj <= sevenDaysFromNow) {
+        await tx.alert.create({
+          data: {
+            productId,
+            alertType: "near_expiry",
+            message: `Near expiry alert: ${product.name} will expire on ${expiryDateObj.toLocaleDateString()}.`,
+          },
+        })
+      }
+
+      return updated
+    })
 
     return NextResponse.json({ message: "Inventory updated successfully", inventoryId: inventoryItem.id })
   } catch (error) {
@@ -157,7 +165,7 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       return NextResponse.json({ message: "Invalid inventory ID" }, { status: 400 })
     }
 
-    // Check if inventory item exists
+    // Check if inventory item exists with product info
     const existingItem = await prisma.inventory.findUnique({
       where: {
         id: inventoryId,
@@ -171,20 +179,23 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       return NextResponse.json({ message: "Inventory item not found" }, { status: 404 })
     }
 
-    // Delete inventory item
-    await prisma.inventory.delete({
-      where: {
-        id: inventoryId,
-      },
-    })
+    // Use transaction to ensure both operations succeed or fail together
+    await prisma.$transaction(async (tx) => {
+      // Create activity log first
+      await tx.activityLog.create({
+        data: {
+          userId: Number.parseInt(session.user.id),
+          action: `deleted ${existingItem.quantity} of ${existingItem.product.name} from inventory`,
+          productId: existingItem.productId,
+        },
+      })
 
-    // Log activity
-    await prisma.activityLog.create({
-      data: {
-        userId: Number.parseInt(session.user.id),
-        action: `deleted inventory item for ${existingItem.product.name}`,
-        productId: existingItem.productId,
-      },
+      // Then delete the inventory item
+      await tx.inventory.delete({
+        where: {
+          id: inventoryId,
+        },
+      })
     })
 
     return NextResponse.json({ message: "Inventory item deleted successfully" })

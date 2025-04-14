@@ -53,58 +53,63 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "Product not found" }, { status: 404 })
     }
 
-    // Create inventory item
-    const inventoryItem = await prisma.inventory.create({
-      data: {
-        productId,
-        quantity,
-        expiryDate: new Date(expiryDate),
-      },
-    })
-
-    // Log activity
-    await prisma.activityLog.create({
-      data: {
-        userId: Number.parseInt(session.user.id),
-        action: `added ${quantity} ${product.unit} of ${product.name} to inventory`,
-        productId,
-      },
-    })
-
-    // Check for low stock and create alert if needed
-    const totalQuantity = await prisma.inventory.aggregate({
-      where: {
-        productId,
-      },
-      _sum: {
-        quantity: true,
-      },
-    })
-
-    if ((totalQuantity._sum.quantity || 0) < 10) {
-      await prisma.alert.create({
+    // Use transaction to ensure all operations succeed or fail together
+    const inventoryItem = await prisma.$transaction(async (tx) => {
+      // Create inventory item
+      const item = await tx.inventory.create({
         data: {
           productId,
-          alertType: "low_stock",
-          message: `Low stock alert: ${product.name} has less than 10 ${product.unit} in inventory.`,
+          quantity,
+          expiryDate: new Date(expiryDate),
         },
       })
-    }
 
-    // Check for near expiry and create alert if needed
-    const expiryDateObj = new Date(expiryDate)
-    const sevenDaysFromNow = new Date()
-    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
-
-    if (expiryDateObj <= sevenDaysFromNow) {
-      await prisma.alert.create({
+      // Log activity
+      await tx.activityLog.create({
         data: {
+          userId: Number.parseInt(session.user.id),
+          action: `added ${quantity} of ${product.unit} to inventory`,
           productId,
-          alertType: "near_expiry",
-          message: `Near expiry alert: ${product.name} will expire on ${expiryDateObj.toLocaleDateString()}.`,
         },
       })
-    }
+
+      // Check for low stock and create alert if needed
+      const totalQuantity = await tx.inventory.aggregate({
+        where: {
+          productId,
+        },
+        _sum: {
+          quantity: true,
+        },
+      })
+
+      if ((totalQuantity._sum.quantity || 0) < 10) {
+        await tx.alert.create({
+          data: {
+            productId,
+            alertType: "low_stock",
+            message: `Low stock alert: ${product.name} has less than 10 ${product.unit} in inventory.`,
+          },
+        })
+      }
+
+      // Check for near expiry and create alert if needed
+      const expiryDateObj = new Date(expiryDate)
+      const sevenDaysFromNow = new Date()
+      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
+
+      if (expiryDateObj <= sevenDaysFromNow) {
+        await tx.alert.create({
+          data: {
+            productId,
+            alertType: "near_expiry",
+            message: `Near expiry alert: ${product.name} will expire on ${expiryDateObj.toLocaleDateString()}.`,
+          },
+        })
+      }
+
+      return item
+    })
 
     return NextResponse.json(
       { message: "Inventory added successfully", inventoryId: inventoryItem.id },

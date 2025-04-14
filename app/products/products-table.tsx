@@ -17,6 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface Product {
   id: number
@@ -35,6 +36,7 @@ export default function ProductsTable({ products }: ProductsTableProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [deleteProductId, setDeleteProductId] = useState<number | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const filteredProducts = products.filter(
     (product) =>
@@ -50,26 +52,35 @@ export default function ProductsTable({ products }: ProductsTableProps) {
     if (!deleteProductId) return
 
     setIsDeleting(true)
+    setError(null)
+    
     try {
       const response = await fetch(`/api/products/${deleteProductId}`, {
         method: "DELETE",
       })
 
+      const data = await response.json()
+
       if (response.ok) {
         router.refresh()
+        setDeleteProductId(null)
       } else {
-        console.error("Failed to delete product")
+        setError(data.message || "Failed to delete product")
       }
     } catch (error) {
-      console.error("Error deleting product:", error)
+      setError("An error occurred while deleting the product")
     } finally {
       setIsDeleting(false)
-      setDeleteProductId(null)
     }
   }
 
   return (
     <div className="space-y-4">
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       <div className="flex items-center">
         <Input
           placeholder="Search products..."

@@ -55,7 +55,7 @@ export default function InventoryForm({ inventory, products }: InventoryFormProp
     resolver: zodResolver(inventorySchema),
     defaultValues: {
       productId: inventory ? inventory.productId.toString() : "",
-      quantity: inventory ? inventory.quantity : undefined,
+      quantity: inventory?.quantity || 0, // Set default to 0 instead of undefined
       expiryDate: inventory ? new Date(inventory.expiryDate) : undefined,
     },
   })
@@ -84,7 +84,6 @@ export default function InventoryForm({ inventory, products }: InventoryFormProp
         const result = await response.json()
         throw new Error(result.message || "Failed to save inventory")
       }
-
       router.push("/inventory")
       router.refresh()
     } catch (error) {

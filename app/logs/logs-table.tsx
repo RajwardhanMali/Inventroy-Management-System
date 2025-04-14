@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { format } from "date-fns"
 
 interface User {
   id: number
@@ -94,7 +95,7 @@ export default function LogsTable({ logs, users }: LogsTableProps) {
                   <TableCell className="font-medium">{log.user.username}</TableCell>
                   <TableCell>{log.action}</TableCell>
                   <TableCell>{log.product.name}</TableCell>
-                  <TableCell>{new Date(log.timestamp).toLocaleString()}</TableCell>
+                  <TableCell>{format(new Date(log.timestamp), 'MM/dd/yyyy, h:mm:ss a')}</TableCell>
                 </TableRow>
               ))
             )}

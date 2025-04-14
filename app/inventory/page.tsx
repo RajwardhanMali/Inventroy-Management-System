@@ -30,7 +30,7 @@ export default async function InventoryPage() {
           <Button asChild>
             <a href="/inventory/new">
               <Plus className="mr-2 h-4 w-4" />
-              Add Inventory
+              Add To Inventory
             </a>
           </Button>
         </div>
